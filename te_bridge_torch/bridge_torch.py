@@ -89,7 +89,7 @@ class ExecuteLocalSolver(ExecuteFunction):
 
     def execute_function(self, app_session):
         mtcp = MonteCarloEstimation(app_session)
-        mtcp.solve2(app_session)
+        mtcp.solve(app_session)
 
 class BridgeTorchProblemApp(AppWithDataSets):
     def get_name(self):
@@ -115,13 +115,15 @@ class BridgeTorchProblemApp(AppWithDataSets):
         return {
             "Classic example data set 1": load_classic_data_set,
             "Classic example data set 2 ": load_classic_data_set2,
-            "Classic 6 person data set": load_data_set_6_person
+            "6 person data set": load_data_set_6_person,
+            "12 person data set": load_data_set_12_person
         }
 
     def get_parameters(self):
         return [
             Parameter(name='max_people_crossing', label='Max number of person crossing bridge', default=2, allowed_type=int, validator=validate_value_g_zero),
-            Parameter(name='learning_iterations', label='Learning iterations', default=5000, allowed_type=int, validator=validate_value_g_zero)
+            Parameter(name='learning_iterations', label='Learning iterations', default=5000, allowed_type=int, validator=validate_value_g_zero),
+            Parameter(name='min_epsilon_threshold', label='Epsilon threshold', default=5000, allowed_type=int, validator=validate_value_g_zero)
         ]
 
 def validate_value_g_zero(value):
@@ -136,6 +138,8 @@ def load_classic_data_set(app_session):
     ])
 
     app_session.data_set.set_param('max_people_crossing', 2, app_session.app)
+    app_session.data_set.set_param('learning_iterations', 1000, app_session.app)
+    app_session.data_set.set_param('min_epsilon_threshold', 100, app_session.app)
 
 def load_classic_data_set2(app_session):
     app_session.data_set.add_all([
@@ -146,6 +150,8 @@ def load_classic_data_set2(app_session):
     ])
 
     app_session.data_set.set_param('max_people_crossing', 2, app_session.app)
+    app_session.data_set.set_param('learning_iterations', 1000, app_session.app)
+    app_session.data_set.set_param('min_epsilon_threshold', 100, app_session.app)
 
 def load_data_set_6_person(app_session):
     app_session.data_set.add_all([
@@ -158,14 +164,36 @@ def load_data_set_6_person(app_session):
     ])
 
     app_session.data_set.set_param('max_people_crossing', 3, app_session.app)
+    app_session.data_set.set_param('learning_iterations', 5000, app_session.app)
+    app_session.data_set.set_param('min_epsilon_threshold', 500, app_session.app)
+
+def load_data_set_12_person(app_session):
+    app_session.data_set.add_all([
+        Person(name="Alice", speed=1),
+        Person(name="Bob", speed=2),
+        Person(name="Charles", speed=3),
+        Person(name="David", speed=7),
+        Person(name="Eric", speed=10),
+        Person(name="Federic", speed=12),
+        Person(name="Gary", speed=5),
+        Person(name="Henry", speed=4),
+        Person(name="Ivan", speed=11),
+        Person(name="Jake", speed=18),
+        Person(name="Kevin", speed=16),
+        Person(name="Larry", speed=9),
+    ])
+
+    app_session.data_set.set_param('max_people_crossing', 4, app_session.app)
+    app_session.data_set.set_param('learning_iterations', 10000, app_session.app)
+    app_session.data_set.set_param('min_epsilon_threshold', 1000, app_session.app)
 
 class MonteCarloEstimation(object):
 
-    def __init__(self, app_session, gamma=0.9, n0=500):
+    def __init__(self, app_session, gamma=0.9):
         self.gamma = gamma
-        self.n0 = n0
         self.learning_iterations = app_session.data_set.get_param('learning_iterations')
         self.max_people_crossing = app_session.data_set.get_param('max_people_crossing')
+        self.n0 = app_session.data_set.get_param('min_epsilon_threshold')
 
         # initial people set contains the speed for each individual
 
@@ -313,7 +341,7 @@ class MonteCarloEstimation(object):
             self.people_left = np.append(self.people_left, people_chosen)
             self.people_crossed = np.setdiff1d(self.people_crossed, people_chosen)
             
-            return people_chosen
+            return people_chosen[0]
 
     """
         Main method used to solve the puzzle, the method employs Reinforcement learning technique to learn from history
@@ -327,73 +355,8 @@ class MonteCarloEstimation(object):
 
         history = []
         direction_debug = {True:'<--', False:'-->'}
-
-        ref_elapsed_time = self._reference_elapsed_time()
-
-        print 'Reference time is:', ref_elapsed_time
-
-        for iteration in range(self.learning_iterations):
-            back = False
-            total_time = 0
-
-            solution = []
-            self.people_left = np.array(self.initial_people_set, dtype=int)
-            self.people_crossed = np.empty((0,), dtype=int)
-
-            while len(self.people_left) > 0:
-                if not back:
-                    people_chosen = self._eps_greedy_choice()
-                else:
-                    people_chosen = self._eps_greedy_choice_return_torch()
-
-                #print 'pleft', self.people_left, '-', self.people_crossed, ' choosen ', people_chosen, direction_debug[back]
-
-                state = self.power_set[tuple(sorted(self.people_left))]
-                action = self.power_set[tuple(people_chosen)]
-                history.append( (state, action, back) )
-
-                self.N[0 if back else 1, state, action] += 1
-
-                prev_people_left = self.people_left
-                elapsed_time = self._cross_the_bridge(people_chosen, back)
-                solution.append((prev_people_left, people_chosen, direction_debug[back], self.people_crossed))
-
-                #print '\t', self.people_left, people_chosen, self.people_crossed
-
-                total_time += elapsed_time
-                back = not back
-
-            #print 'people left', self.people_left
-
-            reward = total_time - ref_elapsed_time
-            reward *= -1
-
-            learning_outcomes.append(LearningRecord(episode=iteration+1, time_cross_bridge=total_time))
-
-            #print 'total time', total_time, 'reward', reward
-
-            for state, action, back in history:
-                direction = 0 if back else 1
-                learning_rate = 1.0 / (self.N[direction, state, action])
-                error = reward - self.Q[direction, state, action]
-                self.Q[direction, state, action] += learning_rate * error
-
-        print 'Last solution', solution
-
-        app_session.data_set.add_all(learning_outcomes)
-
-        for record in solution:
-            #print type(record[0]), record[0], type(record[1]), record[1]
-            app_session.data_set.add(FinalSolution(departure=','.join(map(str, record[0])), who=','.join(map(str, record[1])), direction=record[2], destination=','.join(map(str, record[3]))))
-
-        return (learning_outcomes, solution, ref_elapsed_time)
-
-
-    def solve2(self, app_session):
-        learning_outcomes = []
-
-        history = []
-        direction_debug = {True:'<--', False:'-->'}
+        min_total_time = 1000000
+        min_solution = []
 
         ref_elapsed_time = self._reference_elapsed_time()
 
@@ -442,20 +405,27 @@ class MonteCarloEstimation(object):
                     reward = total_time - ref_elapsed_time
                     reward *= -1
 
+                    if total_time < min_total_time:
+                        min_solution = solution
+                        min_total_time = total_time
+
                     #print 'time=', total_time, 'rewarad=', reward
+                    app_session.task_manager.send_progress_message("iteration: %d total time: %d" % (iteration, total_time))
                     learning_outcomes.append(LearningRecord(episode=iteration+1, time_cross_bridge=total_time))
                     delta = reward - self.Q[direction, state, action]
 
                 self.Q[direction, state, action] += lr * delta
 
-        print 'Last solution', solution
+        print 'Last solution', min_solution
 
         app_session.data_set.add_all(learning_outcomes)
 
-        for record in solution:
+        for record in min_solution:
             #print type(record[0]), record[0], type(record[1]), record[1]
             app_session.data_set.add(FinalSolution(departure=','.join(map(str, record[0])), who=','.join(map(str, record[1])), direction=record[2], destination=','.join(map(str, record[3]))))
 
-        return (learning_outcomes, solution, ref_elapsed_time)
+        app_session.task_manager.send_progress_message("<br> Reference crossing bridge time = %s" % ref_elapsed_time)
+        app_session.task_manager.send_progress_message("End of iteration solution cross bridge time = %s" % total_time)
+        app_session.task_manager.send_progress_message("Minimum cross bridge time = %s" % min_total_time)
 
 
