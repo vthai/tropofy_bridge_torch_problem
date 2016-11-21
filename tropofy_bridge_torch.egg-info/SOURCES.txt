@@ -1,0 +1,9 @@
+setup.py
+te_bridge_torch/__init__.py
+te_bridge_torch/bridge_torch.py
+te_bridge_torch/test.py
+tropofy_bridge_torch.egg-info/PKG-INFO
+tropofy_bridge_torch.egg-info/SOURCES.txt
+tropofy_bridge_torch.egg-info/dependency_links.txt
+tropofy_bridge_torch.egg-info/requires.txt
+tropofy_bridge_torch.egg-info/top_level.txt
