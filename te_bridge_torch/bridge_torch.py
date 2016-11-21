@@ -12,6 +12,7 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the license files for details.
 """
 
 """
+    Solving the bridge torch problem with RL
 
     Created: 20/11/2016
     @author: veng.thai@gmail.com
@@ -88,8 +89,8 @@ class ExecuteLocalSolver(ExecuteFunction):
         return "Solve Bridge Torch Problem"
 
     def execute_function(self, app_session):
-        mtcp = MonteCarloEstimation(app_session)
-        mtcp.solve(app_session)
+        sarsa = SARSALearning(app_session)
+        sarsa.solve(app_session)
 
 class BridgeTorchProblemApp(AppWithDataSets):
     def get_name(self):
@@ -104,7 +105,7 @@ class BridgeTorchProblemApp(AppWithDataSets):
         ))
 
         step_group2 = StepGroup(name='Solve')
-        step_group2.add_step(Step(name='Learning using Monte Carlo estimation', widgets=[ExecuteLocalSolver()]))
+        step_group2.add_step(Step(name='Learning using Reinforcement learning', widgets=[ExecuteLocalSolver()]))
 
         step_group3 = StepGroup(name='View the Solution')
         step_group3.add_step(Step(name='Result', widgets=[LearningChart(), SimpleGrid(FinalSolution)]))
@@ -187,7 +188,7 @@ def load_data_set_12_person(app_session):
     app_session.data_set.set_param('learning_iterations', 10000, app_session.app)
     app_session.data_set.set_param('min_epsilon_threshold', 1000, app_session.app)
 
-class MonteCarloEstimation(object):
+class SARSALearning(object):
 
     def __init__(self, app_session, gamma=0.9):
         self.gamma = gamma
